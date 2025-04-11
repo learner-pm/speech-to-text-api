@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>语音转文本</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .upload-section {
+        border: 2px dashed #ccc;
+        padding: 20px;
+        text-align: center;
+        border-radius: 5px;
+      }
+      .result-section {
+        border: 1px solid #eee;
+        padding: 20px;
+        border-radius: 5px;
+        min-height: 100px;
+      }
+      .loading {
+        display: none;
+        text-align: center;
+        margin: 20px 0;
+      }
+      .error {
+        color: red;
+        margin-top: 10px;
+      }
+      .log {
+        color: #666;
+        font-size: 14px;
+        margin-top: 5px;
+      }
+      button {
+        background-color: #4caf50;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>语音转文本</h1>
+
+      <div class="upload-section">
+        <input
+          type="file"
+          id="audioFile"
+          accept=".wav,.mp3"
+          style="display: none"
+        />
+        <button onclick="document.getElementById('audioFile').click()">
+          选择音频文件
+        </button>
+        <p id="fileName"></p>
+        <button id="uploadBtn" onclick="uploadAudio()" disabled>
+          上传并识别
+        </button>
+      </div>
+
+      <div class="loading" id="loading">
+        <p>正在处理中，请稍候...</p>
+      </div>
+
+      <div class="result-section">
+        <h2>识别结果</h2>
+        <div id="result"></div>
+        <div id="error" class="error"></div>
+        <div id="log" class="log"></div>
+      </div>
+    </div>
+
+    <script>
+      const audioFileInput = document.getElementById("audioFile");
+      const fileNameDisplay = document.getElementById("fileName");
+      const uploadBtn = document.getElementById("uploadBtn");
+      const resultDiv = document.getElementById("result");
+      const errorDiv = document.getElementById("error");
+      const loadingDiv = document.getElementById("loading");
+      const logDiv = document.getElementById("log");
+
+      // 添加日志
+      function addLog(message) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement("div");
+        logEntry.textContent = `[${timestamp}] ${message}`;
+        logDiv.appendChild(logEntry);
+        // 保持最新的日志在视图中
+        logDiv.scrollTop = logDiv.scrollHeight;
+      }
+
+      // 监听文件选择
+      audioFileInput.addEventListener("change", function (e) {
+        const file = e.target.files[0];
+        if (file) {
+          fileNameDisplay.textContent = `已选择: ${file.name}`;
+          uploadBtn.disabled = false;
+          addLog(
+            `选择了文件: ${file.name} (${(file.size / 1024 / 1024).toFixed(
+              2
+            )} MB)`
+          );
+        }
+      });
+
+      // 上传音频文件
+      async function uploadAudio() {
+        const file = audioFileInput.files[0];
+        if (!file) {
+          showError("请先选择音频文件");
+          return;
+        }
+
+        // 检查文件类型
+        const fileExtension = file.name.split(".").pop().toLowerCase();
+        if (!["wav", "mp3"].includes(fileExtension)) {
+          showError("请选择WAV或MP3格式的音频文件");
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("audio", file);
+
+        // 显示加载状态
+        loadingDiv.style.display = "block";
+        resultDiv.innerHTML = "";
+        errorDiv.textContent = "";
+        addLog("开始上传文件...");
+
+        try {
+          const startTime = performance.now();
+          const response = await fetch("http://localhost:5000/transcribe", {
+            method: "POST",
+            body: formData,
+            mode: "cors",
+          });
+
+          const endTime = performance.now();
+          addLog(`请求完成，耗时: ${(endTime - startTime).toFixed(2)}ms`);
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data = await response.json();
+          addLog("收到服务器响应");
+
+          if (data.error) {
+            showError(data.error);
+            addLog(`错误: ${data.error}`);
+          } else {
+            displayResult(data);
+            addLog("识别成功");
+          }
+        } catch (error) {
+          showError(`网络错误: ${error.message}`);
+          addLog(`错误: ${error.message}`);
+        } finally {
+          loadingDiv.style.display = "none";
+        }
+      }
+
+      // 显示识别结果
+      function displayResult(data) {
+        let html = `<p><strong>识别的文本：</strong>${data.text}</p>`;
+
+        if (data.words && data.words.length > 0) {
+          html += "<h3>单词时间戳：</h3><ul>";
+          data.words.forEach((word) => {
+            html += `<li>${word.word} (${word.start.toFixed(
+              2
+            )}s - ${word.end.toFixed(2)}s)</li>`;
+          });
+          html += "</ul>";
+        }
+
+        resultDiv.innerHTML = html;
+      }
+
+      // 显示错误信息
+      function showError(message) {
+        errorDiv.textContent = message;
+      }
+    </script>
+  </body>
+</html>
